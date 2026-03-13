@@ -4,29 +4,37 @@
 
 [Matthieu Terris](https://matthieutrs.github.io/), [Ulugbek S. Kamilov](https://ukmlv.github.io/), [Thomas Moreau](https://tommoral.github.io/about.html).
 
-This repository contains the official implementation of our CVPR 2025 paper "FiRe: Fixed-Point Iteration for Image Restoration". 
+This repository contains the official implementation of CVPR 2025 paper "FiRe: Fixed-Point Iteration for Image Restoration". 
 This work introduces a novel approach to image restoration from the viewpoint of fixed-point iteration.
 
 ![flexible](https://github.com/matthieutrs/FiRe_public/blob/main/images/summary_compressed.jpg) 
 
-## Features
+# Résumé de l'article
+Dans le contexte de la restauration d'images, l'article présente un framework qui prone l'utilisation de tout modèle de restauration couplé à un opérateur de dégradation associé, au lieu d'utiliser les modèles de débruitage, si plebiscités, comme des a priori représentant des images naturelles.Dans le cas d'un algorithme Plug-and-Play qui utilise un réseau préentrainé débruiteur, ce dernier devrait encoder la distribution des images naturelles (a priori). Néanmoins, le problème d'utiliser un débruiteur comme a priori, c'est que lorsque l'algorithme arrive à la convergence, l'image en entrée ne ressemble plus du tout aux images bruitées de son entraînement. Alors, l'action du débruiteur ne correspond plus au score réel $\nabla{\log p_{\sigma}(y)}=\frac{R(y)-y}{\sigma^2}$ nécessaire pour reconstruire l'image. Le décalage crée donc des artefacts sur la solution donnée par l'algorithme PnP.Au lieu de compter sur un débruiteur pour estimer le score d'une image pure, FiRe utilise la distance par rapport à l'état où l'image est stable après avoir subi une dégradation couplée à une restauration. Cela garantit que, même à la convergence, l'action du modèle reste cohérente avec la structure des images naturelles.Le résultat d'application de cette approche donne des images restaurées lisses, non pas par la qualité perceptuelle floue mais par sa qualité d'image naturelle qui ne contienne pas de défauts hautes fréquences comme les artefacts dus à un grand niveau de compression jpeg ou bien au bruit blanc.
 
-The core idea of this work is to observe that, given a restoration model $\text{R}$ associated to a degradation operator $D$,
-the operator $\text{R}\circ D$ is an implicit prior of the form $x - \nabla \log p(x)$.
-In turns, this allows do derive new PnP-like algorithms that can be used to solve inverse problems.
+# Description de la méthode
+Pour un problème de restauration générale: $y = H\,x + w$ ,où $H$ est l'operateur linéaire et w répresente le bruit additif; la fonction objectif standard à minimiser pour tout modèle de restauration supervisé est: $L(\theta)=E_{x \sim pdata,w\sim W} \|R_\theta(H x + w) - x\|$ 
 
-Given a measurement $y = Ax + e$, where $A$ is a linear operator, $e$ is the realisation of some random noise, and $x$ is the image to restore, define $f(x) = \frac{1}{2} \|Ax - y\|^2$ as the data fidelity term.
-Then, if $\text{R}$ is a restoration model, we can define the fixed-point iteration associated to $\text{R}$ as
+La méthodologie proposée par l'article définit un ensemble $C= \{x  \in  {R^n} |R(D(x)) = x \}$ 
+de points fixes de la composition $T=RoD$ avec $R$  le modèle de restauration et  $D = (H · +w)$ sa dégradation associée(lors de l'entrainement de $R$).
 
-we can define the following algorithm:
-``` math
-\begin{align*}
-&u_k = (1-\gamma) x_k + \gamma \text{R}(x_{k}) \\
-&x_{k+1} = \text{prox}_{\lambda f}(u_k) \\
-\end{align*}
-```
+En minimisant la fonction objectif, on s'assure que les images restaurées soient proches de l'ensemble de points fixes C.
+Alors le terme de régularisation devient $f(x)=\frac{1}{2}d_C^2(x)$ ,ce qui définit un prior basée sur la distance à l'ensemble de points fixes C dont le gradient ou "la direction" vers laquelle corriger l'image devient  $\frac{1}{2} \nabla d_C^2(x) = x - R(D(x))$ 
 
-where $\gamma$ is a step size, and $\lambda$ is a regularization parameter.
+L'implémenation de l'algorithme complet devient donc:
+![Algorithme FiRe](algorithm.png)
+
+Les entrées sont: 
+- $x_0$:Image dégradée
+- Modèles de restauration $(R^1, \dots, R^N)$ : Des réseaux de neurones entraînés
+- Dégradations associées $({D}^1,\dots,{D}^N)$:Le type de dégradation que le modèle de restauration ${R ^i}$ a appris à corriger leur de son entraînement 
+- Paramètres $\gamma_n$ et $\lambda$ : Des coefficients qui règlent l'importance de chaque modèle et la fidélité aux données réelles.
+  
+    1. On simule dégradation $D^n$ par l'opérateur $H_k^n$ et le bruit $w_k^n$ pour lequel le modèle $n$ a été conçu 
+    2. On passe la version dégradée artificiellement dans le modèle $R^n$ et on calcule le résidu $r_k^n$ qui est la différence $x_k - R^n(D^n(x_k))$.
+    3. A la ligne 8,on obtient une image intermédiaire avec les combinant les corrections de chaque modèle
+    4. La mise à jour de l'image se fait à la ligne 9 appliquant l'opérateur proximal
+      ![](prox.png)
 
 ## Code
 To reproduce the experiments, first download the test datasets and place them in your data folder. Next, update the `config/config.json` file to point to the correct data folder. There, there are two folders to specify:
